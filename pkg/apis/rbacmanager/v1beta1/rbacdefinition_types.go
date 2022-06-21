@@ -25,6 +25,8 @@ import (
 type Subject struct {
 	rbacv1.Subject
 	ImagePullSecrets []string `json:"imagePullSecrets"`
+	// +optional
+	NamespaceSelector metav1.LabelSelector `json:"namespaceSelector,omitempty"`
 }
 
 // RBACBinding is a specification for a RBACBinding resource

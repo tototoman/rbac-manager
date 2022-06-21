@@ -49,6 +49,14 @@ func TestParseStandard(t *testing.T) {
 				Name:      "ci-bot",
 				Namespace: "bots",
 			},
+		}, {
+			Subject: rbacv1.Subject{
+				Kind: rbacv1.ServiceAccountKind,
+				Name: "dev-bot",
+			},
+			NamespaceSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"team": "devs"},
+			},
 		}},
 		RoleBindings: []rbacmanagerv1beta1.RoleBinding{{
 			Namespace: "bots",
@@ -88,6 +96,14 @@ func TestParseStandard(t *testing.T) {
 			Kind:      rbacv1.ServiceAccountKind,
 			Name:      "ci-bot",
 			Namespace: "bots",
+		}, {
+			Kind:      rbacv1.ServiceAccountKind,
+			Name:      "dev-bot",
+			Namespace: "web",
+		}, {
+			Kind:      rbacv1.ServiceAccountKind,
+			Name:      "dev-bot",
+			Namespace: "api",
 		}},
 	}, {
 		ObjectMeta: metav1.ObjectMeta{
@@ -126,6 +142,16 @@ func TestParseStandard(t *testing.T) {
 			Name:      "ci-bot",
 			Namespace: "bots",
 		},
+	}, {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dev-bot",
+			Namespace: "web",
+		},
+	}, {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dev-bot",
+			Namespace: "api",
+		},
 	}})
 }
 
@@ -143,6 +169,14 @@ func TestParseLabels(t *testing.T) {
 			Subject: rbacv1.Subject{
 				Kind: rbacv1.UserKind,
 				Name: "sue",
+			},
+		}, {
+			Subject: rbacv1.Subject{
+				Kind: rbacv1.ServiceAccountKind,
+				Name: "dev-bot",
+			},
+			NamespaceSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"team": "devs"},
 			},
 		}},
 		RoleBindings: []rbacmanagerv1beta1.RoleBinding{{
@@ -166,6 +200,14 @@ func TestParseLabels(t *testing.T) {
 		Subjects: []rbacv1.Subject{{
 			Kind: rbacv1.UserKind,
 			Name: "sue",
+		}, {
+			Kind:      rbacv1.ServiceAccountKind,
+			Name:      "dev-bot",
+			Namespace: "web",
+		}, {
+			Kind:      rbacv1.ServiceAccountKind,
+			Name:      "dev-bot",
+			Namespace: "api",
 		}},
 	}, {
 		ObjectMeta: metav1.ObjectMeta{
@@ -179,8 +221,28 @@ func TestParseLabels(t *testing.T) {
 		Subjects: []rbacv1.Subject{{
 			Kind: rbacv1.UserKind,
 			Name: "sue",
+		}, {
+			Kind:      rbacv1.ServiceAccountKind,
+			Name:      "dev-bot",
+			Namespace: "web",
+		}, {
+			Kind:      rbacv1.ServiceAccountKind,
+			Name:      "dev-bot",
+			Namespace: "api",
 		}},
-	}}, []rbacv1.ClusterRoleBinding{}, []corev1.ServiceAccount{})
+	}},
+		[]rbacv1.ClusterRoleBinding{},
+		[]corev1.ServiceAccount{{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dev-bot",
+				Namespace: "web",
+			},
+		}, {
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dev-bot",
+				Namespace: "api",
+			},
+		}})
 
 	rbacDef.RBACBindings[0].RoleBindings[0].NamespaceSelector = metav1.LabelSelector{
 		MatchLabels: map[string]string{"team": "devs"},
@@ -188,6 +250,15 @@ func TestParseLabels(t *testing.T) {
 			Key:      "app",
 			Operator: metav1.LabelSelectorOpIn,
 			Values:   []string{"web", "queue"},
+		}},
+	}
+
+	rbacDef.RBACBindings[0].Subjects[1].NamespaceSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{"team": "devs"},
+		MatchExpressions: []metav1.LabelSelectorRequirement{{
+			Key:      "app",
+			Operator: metav1.LabelSelectorOpIn,
+			Values:   []string{"api", "queue"},
 		}},
 	}
 
@@ -204,14 +275,33 @@ func TestParseLabels(t *testing.T) {
 		Subjects: []rbacv1.Subject{{
 			Kind: rbacv1.UserKind,
 			Name: "sue",
+		}, {
+			Kind:      rbacv1.ServiceAccountKind,
+			Name:      "dev-bot",
+			Namespace: "api",
 		}},
-	}}, []rbacv1.ClusterRoleBinding{}, []corev1.ServiceAccount{})
+	}},
+		[]rbacv1.ClusterRoleBinding{},
+		[]corev1.ServiceAccount{{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dev-bot",
+				Namespace: "api",
+			},
+		}})
 
 	rbacDef.RBACBindings[0].RoleBindings[0].NamespaceSelector = metav1.LabelSelector{
 		MatchExpressions: []metav1.LabelSelectorRequirement{{
 			Key:      "app",
 			Operator: metav1.LabelSelectorOpNotIn,
 			Values:   []string{"api", "queue"},
+		}},
+	}
+
+	rbacDef.RBACBindings[0].Subjects[1].NamespaceSelector = metav1.LabelSelector{
+		MatchExpressions: []metav1.LabelSelectorRequirement{{
+			Key:      "app",
+			Operator: metav1.LabelSelectorOpNotIn,
+			Values:   []string{"web", "queue"},
 		}},
 	}
 
@@ -228,9 +318,20 @@ func TestParseLabels(t *testing.T) {
 		Subjects: []rbacv1.Subject{{
 			Kind: rbacv1.UserKind,
 			Name: "sue",
+		}, {
+			Kind:      rbacv1.ServiceAccountKind,
+			Name:      "dev-bot",
+			Namespace: "api",
 		}},
-	}}, []rbacv1.ClusterRoleBinding{}, []corev1.ServiceAccount{})
-
+	}},
+		[]rbacv1.ClusterRoleBinding{},
+		[]corev1.ServiceAccount{{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dev-bot",
+				Namespace: "api",
+			},
+		}})
+		t.Logf("Test 4")
 }
 
 func TestParseMissingNamespace(t *testing.T) {
@@ -256,6 +357,13 @@ func TestParseMissingNamespace(t *testing.T) {
 					Kind: rbacv1.UserKind,
 					Name: "sue",
 				},
+			},
+			{
+				Subject: rbacv1.Subject{
+					Kind: rbacv1.ServiceAccountKind,
+					Name: "dev-bot",
+				},
+				NamespaceSelector: metav1.LabelSelector{MatchLabels: map[string]string{"team": "other-devs"}},
 			},
 		},
 		RoleBindings: []rbacmanagerv1beta1.RoleBinding{{

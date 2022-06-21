@@ -68,27 +68,42 @@ func (p *Parser) parseRBACBinding(rbacBinding rbacmanagerv1beta1.RBACBinding, na
 		return errors.New("No subjects specified for RBAC Binding: " + namePrefix)
 	}
 
+	subjectsList := []rbacmanagerv1beta1.Subject{}
 	for _, requestedSubject := range rbacBinding.Subjects {
 		if requestedSubject.Kind == "ServiceAccount" {
 			pullsecrets := []v1.LocalObjectReference{}
 			for _, secret := range requestedSubject.ImagePullSecrets {
 				pullsecrets = append(pullsecrets, v1.LocalObjectReference{Name: secret})
 			}
-			p.parsedServiceAccounts = append(p.parsedServiceAccounts, v1.ServiceAccount{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:            requestedSubject.Name,
-					Namespace:       requestedSubject.Namespace,
-					OwnerReferences: p.ownerRefs,
-					Labels:          kube.Labels,
-				},
-				ImagePullSecrets: pullsecrets,
-			})
+
+			selectedNamespaces, err := getNamespacesFromSelector(requestedSubject.NamespaceSelector, requestedSubject.Namespace, namespaces)
+			if err != nil {
+				return err
+			}
+
+			for _, namespace := range selectedNamespaces {
+				logrus.Debugf("Adding Service Account With Namespace %v", namespace)
+				subject := requestedSubject
+				subject.Namespace = namespace
+				subjectsList = append(subjectsList, subject)
+				p.parsedServiceAccounts = append(p.parsedServiceAccounts, v1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            requestedSubject.Name,
+						Namespace:       namespace,
+						OwnerReferences: p.ownerRefs,
+						Labels:          kube.Labels,
+					},
+					ImagePullSecrets: pullsecrets,
+				})
+			}
+		} else {
+			subjectsList = append(subjectsList, requestedSubject)
 		}
 	}
 
 	if rbacBinding.ClusterRoleBindings != nil {
 		for _, requestedCRB := range rbacBinding.ClusterRoleBindings {
-			err := p.parseClusterRoleBinding(requestedCRB, rbacBinding.Subjects, namePrefix)
+			err := p.parseClusterRoleBinding(requestedCRB, subjectsList, namePrefix)
 			if err != nil {
 				return err
 			}
@@ -97,7 +112,7 @@ func (p *Parser) parseRBACBinding(rbacBinding rbacmanagerv1beta1.RBACBinding, na
 
 	if rbacBinding.RoleBindings != nil {
 		for _, requestedRB := range rbacBinding.RoleBindings {
-			err := p.parseRoleBinding(requestedRB, rbacBinding.Subjects, namePrefix, namespaces)
+			err := p.parseRoleBinding(requestedRB, subjectsList, namePrefix, namespaces)
 			if err != nil {
 				return err
 			}
@@ -158,44 +173,22 @@ func (p *Parser) parseRoleBinding(
 
 	objectMeta.Name = fmt.Sprintf("%v-%v", prefix, requestedRoleName)
 
-	if rb.NamespaceSelector.MatchLabels != nil || len(rb.NamespaceSelector.MatchExpressions) > 0 {
-		logrus.Debugf("Processing Namespace Selector %v", rb.NamespaceSelector)
+	selectedNamespaces, err := getNamespacesFromSelector(rb.NamespaceSelector, rb.Namespace, namespaces)
+	if err != nil {
+		return err
+	}
 
-		selector, err := metav1.LabelSelectorAsSelector(&rb.NamespaceSelector)
-		if err != nil {
-			logrus.Infof("Error parsing label selector: %s", err.Error())
-			return err
-		}
-
-		for _, namespace := range namespaces.Items {
-			// Lazy way to marshal map[] of labels in to a Set, which we can then match on.
-			if selector.Matches(labels.Merge(namespace.Labels, namespace.Labels)) {
-				logrus.Debugf("Adding Role Binding With Dynamic Namespace %v", namespace.Name)
-
-				om := objectMeta
-				om.Namespace = namespace.Name
-				subs := managerSubjectsToRbacSubjects(subjects)
-
-				p.parsedRoleBindings = append(p.parsedRoleBindings, rbacv1.RoleBinding{
-					ObjectMeta: om,
-					RoleRef:    roleRef,
-					Subjects:   subs,
-				})
-			}
-		}
-
-	} else if rb.Namespace != "" {
-		objectMeta.Namespace = rb.Namespace
+	for _, namespace := range selectedNamespaces {
+		logrus.Debugf("Adding Role Binding With Namespace %v", namespace)
+		om := objectMeta
+		om.Namespace = namespace
 		subs := managerSubjectsToRbacSubjects(subjects)
 
 		p.parsedRoleBindings = append(p.parsedRoleBindings, rbacv1.RoleBinding{
-			ObjectMeta: objectMeta,
+			ObjectMeta: om,
 			RoleRef:    roleRef,
 			Subjects:   subs,
 		})
-
-	} else {
-		return errors.New("Invalid role binding, namespace or namespace selector required")
 	}
 
 	return nil
@@ -251,4 +244,32 @@ func managerSubjectsToRbacSubjects(subjects []rbacmanagerv1beta1.Subject) []rbac
 		})
 	}
 	return subs
+}
+
+// getNamespacesFromSelector returns a list of namespaces from a specific selector and defaults to a given resource namespace
+// This resource can be used by both role bindings and service accounts
+func getNamespacesFromSelector(namespaceSelector metav1.LabelSelector, resourceNamespace string, namespaces *v1.NamespaceList) ([]string, error) {
+	selectedNamespaces := []string{}
+	if namespaceSelector.MatchLabels != nil || len(namespaceSelector.MatchExpressions) > 0 {
+		logrus.Debugf("Processing Namespace Selector %v", namespaceSelector)
+
+		selector, err := metav1.LabelSelectorAsSelector(&namespaceSelector)
+		if err != nil {
+			logrus.Infof("Error parsing label selector: %s", err.Error())
+			return []string{}, err
+		}
+
+		for _, namespace := range namespaces.Items {
+			// Lazy way to marshal map[] of labels in to a Set, which we can then match on.
+			if selector.Matches(labels.Merge(namespace.Labels, namespace.Labels)) {
+				logrus.Debugf("Select Dynamic Namespace %v", namespace.Name)
+				selectedNamespaces = append(selectedNamespaces, namespace.Name)
+			}
+		}
+	} else if resourceNamespace != "" {
+		selectedNamespaces = append(selectedNamespaces, resourceNamespace)
+	} else {
+		return []string{}, errors.New("Invalid resource, namespace or namespace selector required")
+	}
+	return selectedNamespaces, nil
 }

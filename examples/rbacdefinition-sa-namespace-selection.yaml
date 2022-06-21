@@ -1,0 +1,15 @@
+apiVersion: rbacmanager.reactiveops.io/v1beta1
+kind: RBACDefinition
+metadata:
+  name: robot-rbac-selector
+rbacBindings:
+  - name: robot-ci-selector
+    subjects:
+      - kind: ServiceAccount
+        name: robot
+        namespaceSelector:
+          matchLabels:
+            team: dev
+    roleBindings:
+      - clusterRole: edit
+        namespace: app
